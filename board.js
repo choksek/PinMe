@@ -793,8 +793,8 @@ handle.setAttribute("aria-label","Connect this card");
 handle.textContent="●";
 handle.style.cssText="position:absolute;right:-11px;top:50%;transform:translateY(-50%);width:18px;height:18px;border:2px solid #735b43;border-radius:50%;background:#f8ead2;color:#735b43;line-height:10px;padding:0;cursor:crosshair;z-index:5";
 handle.addEventListener("mousedown",function(event){
-e.preventDefault();
-e.stopPropagation();
+event.preventDefault();
+event.stopPropagation();
 activeConnection={from:String(cardData.id),start:cardPoint(card,"right")};
 const layer=ensureConnectionLayer();
 connectionPreview=addStringPath(layer,activeConnection.start,activeConnection.start,true);
