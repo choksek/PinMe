@@ -699,14 +699,8 @@ let connections=[];
 let activeConnection=null;
 let connectionPreview=null;
 
-function connectionsKey(){
-return "connections_"+boardId;
-}
-
-function saveConnections(){
-localStorage.setItem(connectionsKey(),JSON.stringify(connections));
-}
-
+function connectionsKey(){ return "connections_"+boardId; }
+function saveConnections(){ localStorage.setItem(connectionsKey(),JSON.stringify(connections)); }
 function loadConnections(){
 const saved=localStorage.getItem(connectionsKey());
 connections=saved?JSON.parse(saved):[];
@@ -722,100 +716,95 @@ layer.setAttribute("aria-hidden","true");
 layer.style.cssText="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:1";
 const defs=document.createElementNS("http://www.w3.org/2000/svg","defs");
 const marker=document.createElementNS("http://www.w3.org/2000/svg","marker");
-marker.setAttribute("id","stringArrow");
-marker.setAttribute("viewBox","0 0 10 10");
-marker.setAttribute("refX","8");
-marker.setAttribute("refY","5");
-marker.setAttribute("markerWidth","6");
-marker.setAttribute("markerHeight","6");
-marker.setAttribute("orient","auto-start-reverse");
+marker.setAttribute("id","stringArrow"); marker.setAttribute("viewBox","0 0 10 10");
+marker.setAttribute("refX","8"); marker.setAttribute("refY","5");
+marker.setAttribute("markerWidth","6"); marker.setAttribute("markerHeight","6"); marker.setAttribute("orient","auto");
 const arrow=document.createElementNS("http://www.w3.org/2000/svg","path");
-arrow.setAttribute("d","M 0 0 L 10 5 L 0 10 z");
-arrow.setAttribute("fill","#735b43");
-marker.appendChild(arrow);
-defs.appendChild(marker);
-layer.appendChild(defs);
-board.prepend(layer);
+arrow.setAttribute("d","M 0 0 L 10 5 L 0 10 z"); arrow.setAttribute("fill","#735b43");
+marker.appendChild(arrow); defs.appendChild(marker); layer.appendChild(defs); board.prepend(layer);
 return layer;
 }
 
 function cardPoint(card,side){
-return {
-x:card.offsetLeft+(side==="right"?card.offsetWidth:0),
-y:card.offsetTop+card.offsetHeight/2
+const points={
+left:{x:card.offsetLeft,y:card.offsetTop+card.offsetHeight/2},
+right:{x:card.offsetLeft+card.offsetWidth,y:card.offsetTop+card.offsetHeight/2},
+top:{x:card.offsetLeft+card.offsetWidth/2,y:card.offsetTop},
+bottom:{x:card.offsetLeft+card.offsetWidth/2,y:card.offsetTop+card.offsetHeight}
 };
+return points[side]||points.right;
 }
 
-function stringPath(from,to){
-const distance=Math.max(80,Math.abs(to.x-from.x));
-const wobble=Math.max(16,Math.min(42,Math.abs(to.y-from.y)/3+16));
+function sideVector(side){
+return {left:{x:-1,y:0},right:{x:1,y:0},top:{x:0,y:-1},bottom:{x:0,y:1}}[side]||{x:1,y:0};
+}
+
+function stringPath(from,to,fromSide,toSide){
+const curve=Math.max(55,Math.min(150,Math.hypot(to.x-from.x,to.y-from.y)/2));
+const startDirection=sideVector(fromSide);
+const endDirection=sideVector(toSide);
 return "M "+from.x+" "+from.y+
-" C "+(from.x+distance/2)+" "+(from.y-wobble)+
-", "+(to.x-distance/2)+" "+(to.y+wobble)+
+" C "+(from.x+startDirection.x*curve)+" "+(from.y+startDirection.y*curve)+
+", "+(to.x-endDirection.x*curve)+" "+(to.y-endDirection.y*curve)+
 ", "+to.x+" "+to.y;
 }
 
-function addStringPath(layer,from,to,isPreview){
+function addStringPath(layer,from,to,fromSide,toSide,isPreview){
 const path=document.createElementNS("http://www.w3.org/2000/svg","path");
-path.setAttribute("d",stringPath(from,to));
-path.setAttribute("fill","none");
-path.setAttribute("stroke",isPreview?"#b99b77":"#735b43");
-path.setAttribute("stroke-width",isPreview?"2":"3");
-path.setAttribute("stroke-linecap","round");
+path.setAttribute("d",stringPath(from,to,fromSide,toSide));
+path.setAttribute("fill","none"); path.setAttribute("stroke",isPreview?"#b99b77":"#735b43");
+path.setAttribute("stroke-width",isPreview?"2":"3"); path.setAttribute("stroke-linecap","round");
 path.setAttribute("stroke-dasharray",isPreview?"5 5":"1 6");
 if(!isPreview)path.setAttribute("marker-end","url(#stringArrow)");
-layer.appendChild(path);
-return path;
+layer.appendChild(path); return path;
 }
 
 function renderConnections(){
 const layer=ensureConnectionLayer();
 [...layer.querySelectorAll(".connectionString")].forEach(path=>path.remove());
-connections=connections.filter(connection=>
-document.querySelector('.card[data-id="'+connection.from+'"]') &&
-document.querySelector('.card[data-id="'+connection.to+'"]')
-);
+connections=connections.filter(connection=>document.querySelector('.card[data-id="'+connection.from+'"]')&&document.querySelector('.card[data-id="'+connection.to+'"]'));
 connections.forEach(connection=>{
 const from=document.querySelector('.card[data-id="'+connection.from+'"]');
 const to=document.querySelector('.card[data-id="'+connection.to+'"]');
-const path=addStringPath(layer,cardPoint(from,"right"),cardPoint(to,"left"),false);
+const fromSide=connection.fromSide||"right";
+const toSide=connection.toSide||"left";
+const path=addStringPath(layer,cardPoint(from,fromSide),cardPoint(to,toSide),fromSide,toSide,false);
 path.classList.add("connectionString");
 });
 }
 
+function nearestSide(card,event){
+const rect=card.getBoundingClientRect();
+const distances={left:Math.abs(event.clientX-rect.left),right:Math.abs(event.clientX-rect.right),top:Math.abs(event.clientY-rect.top),bottom:Math.abs(event.clientY-rect.bottom)};
+return Object.keys(distances).reduce((closest,side)=>distances[side]<distances[closest]?side:closest,"left");
+}
+
 function decorateCardForConnections(card,cardData){
 if(card.querySelector(".connectionHandle"))return;
+const positions={left:"left:-10px;top:50%;transform:translateY(-50%)",right:"right:-10px;top:50%;transform:translateY(-50%)",top:"top:-10px;left:50%;transform:translateX(-50%)",bottom:"bottom:-10px;left:50%;transform:translateX(-50%)"};
+Object.entries(positions).forEach(([side,position])=>{
 const handle=document.createElement("button");
-handle.type="button";
-handle.className="connectionHandle";
-handle.title="Drag to another card to connect them";
-handle.setAttribute("aria-label","Connect this card");
+handle.type="button"; handle.className="connectionHandle"; handle.dataset.side=side;
+handle.title="Drag from this edge to connect cards"; handle.setAttribute("aria-label","Connect from "+side+" edge");
 handle.textContent="●";
-handle.style.cssText="position:absolute;right:-11px;top:50%;transform:translateY(-50%);width:18px;height:18px;border:2px solid #735b43;border-radius:50%;background:#f8ead2;color:#735b43;line-height:10px;padding:0;cursor:crosshair;z-index:5";
+handle.style.cssText="position:absolute;"+position+";width:18px;height:18px;border:2px solid #735b43;border-radius:50%;background:#f8ead2;color:#735b43;line-height:10px;padding:0;cursor:crosshair;z-index:5";
 card.appendChild(handle);
-
 handle.addEventListener("mousedown",function(event){
-event.preventDefault();
-event.stopPropagation();
-activeConnection={from:String(cardData.id),start:cardPoint(card,"right")};
+event.preventDefault(); event.stopPropagation();
+activeConnection={from:String(cardData.id),fromSide:side,start:cardPoint(card,side)};
 const layer=ensureConnectionLayer();
-connectionPreview=addStringPath(layer,activeConnection.start,activeConnection.start,true);
+connectionPreview=addStringPath(layer,activeConnection.start,activeConnection.start,side,side,true);
 connectionPreview.classList.add("connectionPreview");
 });
+});
 card.querySelector(".delete").addEventListener("click",function(){
-connections=connections.filter(connection=>String(connection.from)!==String(cardData.id) && String(connection.to)!==String(cardData.id));
-saveConnections();
-renderConnections();
+connections=connections.filter(connection=>String(connection.from)!==String(cardData.id)&&String(connection.to)!==String(cardData.id));
+saveConnections(); renderConnections();
 });
 }
 
 const originalCreateCardElement=createCardElement;
-createCardElement=function(cardData){
-const card=originalCreateCardElement(cardData);
-decorateCardForConnections(card,cardData);
-return card;
-};
-
+createCardElement=function(cardData){ const card=originalCreateCardElement(cardData); decorateCardForConnections(card,cardData); return card; };
 loadConnections();
 document.querySelectorAll(".card").forEach(card=>{
 const cardData=cards.find(item=>String(item.id)===String(card.dataset.id));
@@ -824,10 +813,10 @@ if(cardData)decorateCardForConnections(card,cardData);
 renderConnections();
 
 document.addEventListener("mousemove",function(event){
-if(activeConnection && connectionPreview){
+if(activeConnection&&connectionPreview){
 const rect=board.getBoundingClientRect();
 const point={x:(event.clientX-rect.left)/zoomLevel,y:(event.clientY-rect.top)/zoomLevel};
-connectionPreview.setAttribute("d",stringPath(activeConnection.start,point));
+connectionPreview.setAttribute("d",stringPath(activeConnection.start,point,activeConnection.fromSide,activeConnection.fromSide));
 }
 if(event.buttons)renderConnections();
 });
@@ -835,15 +824,14 @@ if(event.buttons)renderConnections();
 document.addEventListener("mouseup",function(event){
 if(!activeConnection)return;
 const target=event.target.closest(".card");
-if(target && String(target.dataset.id)!==activeConnection.from){
-const exists=connections.some(connection=>String(connection.from)===activeConnection.from && String(connection.to)===String(target.dataset.id));
+if(target&&String(target.dataset.id)!==activeConnection.from){
+const toSide=nearestSide(target,event);
+const exists=connections.some(connection=>String(connection.from)===activeConnection.from&&String(connection.to)===String(target.dataset.id)&&connection.fromSide===activeConnection.fromSide&&(connection.toSide||"left")===toSide);
 if(!exists){
-connections.push({id:Date.now(),from:activeConnection.from,to:String(target.dataset.id)});
+connections.push({id:Date.now(),from:activeConnection.from,to:String(target.dataset.id),fromSide:activeConnection.fromSide,toSide});
 saveConnections();
 }
 }
 if(connectionPreview)connectionPreview.remove();
-connectionPreview=null;
-activeConnection=null;
-renderConnections();
+connectionPreview=null; activeConnection=null; renderConnections();
 });
