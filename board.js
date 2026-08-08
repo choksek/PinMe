@@ -693,3 +693,155 @@ document.getElementById("boardWidth").value=size.w;
 document.getElementById("boardHeight").value=size.h;
 
 }
+
+/* STRING CONNECTIONS */
+let connections=[];
+let activeConnection=null;
+let connectionPreview=null;
+
+function connectionsKey(){
+return "connections_"+boardId;
+}
+
+function saveConnections(){
+localStorage.setItem(connectionsKey(),JSON.stringify(connections));
+}
+
+function loadConnections(){
+const saved=localStorage.getItem(connectionsKey());
+connections=saved?JSON.parse(saved):[];
+}
+
+function ensureConnectionLayer(){
+let layer=document.getElementById("connectionLayer");
+if(layer)return layer;
+board.style.position="relative";
+layer=document.createElementNS("http://www.w3.org/2000/svg","svg");
+layer.id="connectionLayer";
+layer.setAttribute("aria-hidden","true");
+layer.style.cssText="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:1";
+const defs=document.createElementNS("http://www.w3.org/2000/svg","defs");
+const marker=document.createElementNS("http://www.w3.org/2000/svg","marker");
+marker.setAttribute("id","stringArrow");
+marker.setAttribute("viewBox","0 0 10 10");
+marker.setAttribute("refX","8");
+marker.setAttribute("refY","5");
+marker.setAttribute("markerWidth","6");
+marker.setAttribute("markerHeight","6");
+marker.setAttribute("orient","auto-start-reverse");
+const arrow=document.createElementNS("http://www.w3.org/2000/svg","path");
+arrow.setAttribute("d","M 0 0 L 10 5 L 0 10 z");
+arrow.setAttribute("fill","#735b43");
+marker.appendChild(arrow);
+defs.appendChild(marker);
+layer.appendChild(defs);
+board.prepend(layer);
+return layer;
+}
+
+function cardPoint(card,side){
+return {
+x:card.offsetLeft+(side==="right"?card.offsetWidth:0),
+y:card.offsetTop+card.offsetHeight/2
+};
+}
+
+function stringPath(from,to){
+const distance=Math.max(80,Math.abs(to.x-from.x));
+const wobble=Math.max(16,Math.min(42,Math.abs(to.y-from.y)/3+16));
+return "M "+from.x+" "+from.y+
+" C "+(from.x+distance/2)+" "+(from.y-wobble)+
+", "+(to.x-distance/2)+" "+(to.y+wobble)+
+", "+to.x+" "+to.y;
+}
+
+function addStringPath(layer,from,to,isPreview){
+const path=document.createElementNS("http://www.w3.org/2000/svg","path");
+path.setAttribute("d",stringPath(from,to));
+path.setAttribute("fill","none");
+path.setAttribute("stroke",isPreview?"#b99b77":"#735b43");
+path.setAttribute("stroke-width",isPreview?"2":"3");
+path.setAttribute("stroke-linecap","round");
+path.setAttribute("stroke-dasharray",isPreview?"5 5":"1 6");
+if(!isPreview)path.setAttribute("marker-end","url(#stringArrow)");
+layer.appendChild(path);
+return path;
+}
+
+function renderConnections(){
+const layer=ensureConnectionLayer();
+[...layer.querySelectorAll(".connectionString")].forEach(path=>path.remove());
+connections=connections.filter(connection=>
+document.querySelector('.card[data-id="'+connection.from+'"]') &&
+document.querySelector('.card[data-id="'+connection.to+'"]')
+);
+connections.forEach(connection=>{
+const from=document.querySelector('.card[data-id="'+connection.from+'"]');
+const to=document.querySelector('.card[data-id="'+connection.to+'"]');
+const path=addStringPath(layer,cardPoint(from,"right"),cardPoint(to,"left"),false);
+path.classList.add("connectionString");
+});
+}
+
+function decorateCardForConnections(card,cardData){
+if(card.querySelector(".connectionHandle"))return;
+const handle=document.createElement("button");
+handle.type="button";
+handle.className="connectionHandle";
+handle.title="Drag to another card to connect them";
+handle.setAttribute("aria-label","Connect this card");
+handle.textContent="●";
+handle.style.cssText="position:absolute;right:-11px;top:50%;transform:translateY(-50%);width:18px;height:18px;border:2px solid #735b43;border-radius:50%;background:#f8ead2;color:#735b43;line-height:10px;padding:0;cursor:crosshair;z-index:5";
+handle.addEventListener("mousedown",function(event){
+e.preventDefault();
+e.stopPropagation();
+activeConnection={from:String(cardData.id),start:cardPoint(card,"right")};
+const layer=ensureConnectionLayer();
+connectionPreview=addStringPath(layer,activeConnection.start,activeConnection.start,true);
+connectionPreview.classList.add("connectionPreview");
+});
+card.querySelector(".delete").addEventListener("click",function(){
+connections=connections.filter(connection=>String(connection.from)!==String(cardData.id) && String(connection.to)!==String(cardData.id));
+saveConnections();
+renderConnections();
+});
+}
+
+const originalCreateCardElement=createCardElement;
+createCardElement=function(cardData){
+const card=originalCreateCardElement(cardData);
+decorateCardForConnections(card,cardData);
+return card;
+};
+
+loadConnections();
+document.querySelectorAll(".card").forEach(card=>{
+const cardData=cards.find(item=>String(item.id)===String(card.dataset.id));
+if(cardData)decorateCardForConnections(card,cardData);
+});
+renderConnections();
+
+document.addEventListener("mousemove",function(event){
+if(activeConnection && connectionPreview){
+const rect=board.getBoundingClientRect();
+const point={x:(event.clientX-rect.left)/zoomLevel,y:(event.clientY-rect.top)/zoomLevel};
+connectionPreview.setAttribute("d",stringPath(activeConnection.start,point));
+}
+if(event.buttons)renderConnections();
+});
+
+document.addEventListener("mouseup",function(event){
+if(!activeConnection)return;
+const target=event.target.closest(".card");
+if(target && String(target.dataset.id)!==activeConnection.from){
+const exists=connections.some(connection=>String(connection.from)===activeConnection.from && String(connection.to)===String(target.dataset.id));
+if(!exists){
+connections.push({id:Date.now(),from:activeConnection.from,to:String(target.dataset.id)});
+saveConnections();
+}
+}
+if(connectionPreview)connectionPreview.remove();
+connectionPreview=null;
+activeConnection=null;
+renderConnections();
+});
